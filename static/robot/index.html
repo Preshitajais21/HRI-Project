@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Robot View</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;margin:0;background:#0b0d12;color:#f8fafc}
+    .top{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#111827}
+    .btn{border:1px solid #374151;border-radius:10px;background:#1f2937;color:#e5e7eb;padding:10px 14px;cursor:pointer}
+    .wrap{max-width:1000px;margin:20px auto;padding:0 16px}
+    .panel{background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:16px}
+    video{width:100%;max-height:60vh;border-radius:10px;background:#000}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+    .box{background:#111827;border:1px solid #374151;border-radius:10px;padding:10px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input[type=number]{width:90px;padding:8px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:#e5e7eb}
+    .muted{color:#9ca3af}
+    .good{color:#86efac}
+    .popup{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50}
+    .modal{width:min(520px,92vw);background:#111827;border:1px solid #374151;border-radius:12px;padding:16px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div><strong>Robot View</strong> <span id="condTag" class="muted"></span></div>
+    <button class="btn" id="backBtn">Back to Task</button>
+  </div>
+
+  <div class="wrap">
+    <div class="panel">
+      <video id="robotClip" controls muted playsinline>
+        <!-- We have only webm for now -->
+        <source id="srcWebm" type='video/webm'>
+        Your browser does not support HTML5 video.
+      </video>
+      <div class="row" style="margin-top:8px;">
+        <span class="muted">If autoplay is blocked, press play.</span>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <div class="row">
+        <strong>Specify items for the robot to collect (will be added to inventory after run):</strong>
+        <span id="runStatus" class="muted"></span>
+      </div>
+      <div id="inputs" class="grid"></div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="startRunBtn">Start 20s Collection</button>
+      </div>
+      <p class="muted" style="margin-top:6px;">Enter quantities, click Start. After ~20 seconds, collection completes and you can return.</p>
+    </div>
+  </div>
+
+  <!-- Done popup -->
+  <div class="popup" id="donePopup">
+    <div class="modal">
+      <h3 style="margin:0 0 6px;">Collection complete</h3>
+      <p class="muted" style="margin:0 0 12px;">Your requested amounts will be applied on the main page.</p>
+      <div class="row" style="justify-content:flex-end;">
+        <button class="btn" id="goMainBtn">Go to Main Page</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="robot.js?v=one_video_v1"></script>
+</body>
+</html>
+
+
+

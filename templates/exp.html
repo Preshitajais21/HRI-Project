@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Hospital Robot Inventory Supervision</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --border:#e5e7eb; --muted:#667085; --brand:#2563eb; --bg:#f7f7f9; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background: var(--bg); color:#0f172a; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#fff; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
+    .tag { background:#eef3ff; border:1px solid #c8d6ff; border-radius:8px; padding:2px 8px; font-size:12px; margin-left:8px; }
+    .wrap { display:grid; grid-template-columns: 1.1fr 1fr; gap:16px; padding:16px; max-width:1200px; margin:0 auto; }
+    .card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .title { margin:0 0 8px; font-weight:700; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .btn { border:1px solid #cfd3da; border-radius:10px; background:#fff; padding:8px 12px; cursor:pointer; }
+    .btn.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
+    .grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; }
+    .invItem { padding:10px; border:1px solid var(--border); border-radius:10px; background:#fafafa; display:flex; justify-content:space-between; align-items:center; }
+    .needRow { display:flex; gap:6px; flex-wrap:wrap; }
+    .chip { background:#eef2ff; border:1px solid #c7d2fe; padding:3px 8px; border-radius:999px; font-size:12px; }
+    .divider { height:1px; background: var(--border); margin:12px 0; }
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .righthead { display:flex; justify-content:space-between; align-items:center; }
+    .question { font-size:18px; margin:6px 0 12px; }
+    .question-opts { display:flex; gap:8px; flex-wrap:wrap; }
+    .statusbar { min-height:22px; font-size:14px; color:#334155; margin-top:6px; }
+    .popup { position: fixed; inset:0; background: rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:50; }
+    .modal { width:min(520px, 92vw); background:#fff; border-radius:12px; border:1px solid var(--border); padding:16px; }
+    .modal h3 { margin:0 0 8px; }
+    .modal .row { justify-content:flex-end; }
+    .pill { border:1px solid #cfd3da; border-radius:999px; padding:6px 10px; cursor:pointer; }
+    .pill.sel { background:#2563eb; color:#fff; border-color:#2563eb; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <strong>Hospital Robot Inventory Supervision</strong>
+      <span class="tag" id="conditionTag">Cond: …</span>
+      <span class="tag" id="buildTag">BUILD v2</span>
+    </div>
+    <div class="muted">Time <span id="timer">00:00</span></div>
+  </div>
+
+  <div class="wrap">
+    <!-- LEFT: Inventory & Tasks -->
+    <div class="card">
+      <h3 class="title">Inventory</h3>
+      <div id="invGrid" class="grid"></div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <h3 class="title" style="margin:0;">Current Task</h3>
+        <span class="muted" id="taskTimer"></span>
+      </div>
+      <div id="taskBlock">
+        <div id="taskText" class="muted">Preparing first task…</div>
+        <div id="taskNeed" class="needRow" style="margin-top:6px;"></div>
+        <div class="row" style="margin-top:8px;">
+          <span class="muted">Click items in the inventory to fulfil requirements.</span>
+          <button class="btn" id="skipTaskBtn" title="Debug/demo only">Skip Task</button>
+        </div>
+        <div id="taskStatus" class="statusbar"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Robot & Popups -->
+    <div class="card">
+      <div class="righthead">
+        <h3 class="title">Robot / Questions</h3>
+        <div class="row">
+          <button class="btn" id="showRobotBtn">Show Robot</button>
+        </div>
+      </div>
+
+      <div id="robotQuestionBlock">
+        <div class="question" id="qText">Waiting for robot…</div>
+        <div class="question-opts" id="qOptions"></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <strong>Awareness Check</strong>
+        <span class="muted">Random SA pop-ups will appear</span>
+      </div>
+
+      <div class="statusbar" id="robotStatus">Status: Idle…</div>
+      <div class="statusbar" id="silentStatus"></div>
+    </div>
+  </div>
+
+  <!-- Workload popup -->
+  <div class="popup" id="wlPopup">
+    <div class="modal">
+      <h3>Rate your workload right now</h3>
+      <p class="muted" style="margin-top:0;">1 = low, 2 = medium, 3 = high</p>
+      <div class="row" id="wlChoices">
+        <span class="pill" data-v="1">1</span>
+        <span class="pill" data-v="2">2</span>
+        <span class="pill" data-v="3">3</span>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn" id="wlClose">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SA popup -->
+  <div class="popup" id="saPopup">
+    <div class="modal">
+      <h3>Situational Awareness</h3>
+      <div id="saPrompt" class="muted" style="margin-top:0;">What is the robot doing now?</div>
+      <div class="row" id="saChoices" style="margin-top:8px;"></div>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn" id="saClose">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load main JS (cache-busted) -->
+  <script src="/static/js/task.js?v=inventory_v2"></script>
+</body>
+</html>
+
+
+
