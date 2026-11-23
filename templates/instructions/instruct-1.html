@@ -1,45 +1,292 @@
-<div id="container-instructions">
+<style>
+  .inst-page {
+    background: #f3f4f6;
+    padding: 24px 0 40px;
+  }
 
-	<h1>Instructions</h1>
+  .inst-container {
+    max-width: 1080px;
+    margin: 0 auto;
+  }
 
-	<hr />
+  .inst-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 18px;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e5e7eb;
+  }
 
-	<div class="instructions well">
+  .inst-header {
+    border-left: 4px solid #2563eb;
+    padding-left: 14px;
+    margin-bottom: 6px;
+  }
 
-	    <p>
-		    This is the first page of instructions.
-	    </p>
-	    
-	    <p>
-	    	Be helpful, clear.
-        </p>
+  .inst-header h2 {
+    margin: 0;
+  }
 
-        <p>
-        	Use images and concrete examples.
-        </p>
+  .inst-subtitle {
+    margin-top: 6px;
+    color: #4b5563;
+  }
 
-	    <script type="text/javascript">
-	    //console.log(psiTurk.getInstructionIndicator())
-	    </script>
+  .inst-section-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
 
-	</div>
+  .inst-section-kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-bottom: 2px;
+  }
 
-	<hr />
+  .inst-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: flex-start;
+  }
 
+  .inst-col-text {
+    flex: 1 1 55%;
+    min-width: 260px;
+  }
 
-    <div class="instructionsnav">
-        <div class="row">
-            <div class="col-xs-2">
-            	<!-- no previous button on first screen -->
-            </div>
-            <div class="col-xs-8">
-            </div>
-            <div class="col-xs-2">
-                <button type="button" id="next" value="next" class="btn btn-primary btn-lg continue">
-                Next <span class="glyphicon glyphicon-arrow-right"></span>
-                </button>
-            </div>
-        </div>
+  .inst-col-img {
+    flex: 1 1 35%;
+    min-width: 220px;
+    text-align: center;
+  }
+
+  .inst-col-img img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .inst-caption {
+    font-size: 0.78rem;
+    color: #6b7280;
+    margin-top: 4px;
+  }
+
+  .inst-list {
+    margin-bottom: 6px;
+  }
+
+  .inst-list li {
+    margin-bottom: 3px;
+  }
+
+  .inst-note {
+    font-size: 0.85rem;
+    color: #6b7280;
+  }
+
+  .inst-cta {
+    text-align: center;
+    margin-top: 18px;
+  }
+
+  .inst-cta p {
+    margin-bottom: 10px;
+    color: #374151;
+  }
+
+  .inst-cta .btn-primary {
+    padding: 10px 26px;
+    font-size: 1.02rem;
+    border-radius: 999px;
+  }
+
+  @media (max-width: 768px) {
+    .inst-card {
+      padding: 16px 14px;
+    }
+    .inst-row {
+      flex-direction: column;
+    }
+    .inst-col-img {
+      order: -1;
+    }
+  }
+</style>
+
+<div class="inst-page">
+  <div class="inst-container">
+
+    <!-- Header -->
+    <div class="inst-card">
+      <div class="inst-header">
+        <h2>Instructions – Part 1: Interactive Robot</h2>
+      </div>
+      <p class="inst-subtitle">
+        In this first part, you will supervise a
+        <strong>hospital inventory robot</strong>.
+        The robot will <strong>ask you what items to collect</strong>, and you
+        will decide how much it should restock.
+      </p>
     </div>
 
+    <!-- Overall layout -->
+    <div class="inst-card">
+      <div class="inst-section-kicker">Step 1</div>
+      <div class="inst-section-title">Overall screen layout</div>
+      <p>
+        When the experiment starts, you will see a screen similar to the one below.
+        It has four main areas:
+        <strong>Inventory</strong> (left),
+        <strong>Current Task</strong> (middle),
+        <strong>Robot / Questions</strong> (right),
+        and the <strong>Robot Video</strong> (bottom).
+      </p>
+      <div class="inst-col-img" style="margin-top: 10px; width: 90%">
+        <img src="/static/images/instructions/overview.png"
+             alt="Overview of the full experiment screen">
+        <div class="inst-caption">
+          Example of the full experiment screen.
+        </div>
+      </div>
+    </div>
+
+    <!-- Inventory panel -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-kicker">Step 2</div>
+          <div class="inst-section-title">Inventory panel (left)</div>
+          <p>
+            The <strong>Inventory</strong> panel shows item names
+            (for example, Gloves, Syringes, Masks) and their current counts.
+          </p>
+          <ul class="inst-list">
+            <li>Click an item to send <strong>1 unit</strong> toward the current task.</li>
+            <li>You can click the same item multiple times to send more units.</li>
+          </ul>
+          <p class="inst-note">
+            These clicks represent you telling the robot which items to send to the hospital.
+          </p>
+        </div>
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/inventory.png"
+               alt="Inventory panel example">
+          <div class="inst-caption">
+            Close-up of the Inventory panel.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current Task panel -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-kicker">Step 3</div>
+          <div class="inst-section-title">Current Task panel (middle)</div>
+          <p>
+            The <strong>Current Task</strong> panel tells you what the hospital
+            currently needs (for example, “2 Gloves, 3 Masks”).
+          </p>
+          <ul class="inst-list">
+            <li>Use the Inventory panel to send items toward this task.</li>
+            <li>When you are satisfied with what you have sent, click
+              <strong>“Submit Task”</strong> to finish that task.</li>
+          </ul>
+          <p class="inst-note">
+            After you submit, the next task will appear after a short delay.
+          </p>
+        </div>
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/current_task.png"
+               alt="Current Task panel example">
+          <div class="inst-caption">
+            Close-up of the Current Task panel.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robot / Questions panel -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-kicker">Step 4</div>
+          <div class="inst-section-title">Robot / Questions panel (right)</div>
+          <p>
+            The <strong>Robot / Questions</strong> panel shows messages from the robot.
+            In this interactive part, the robot will sometimes ask:
+            <em>“How many of each item should I collect?”</em>
+          </p>
+          <ul class="inst-list">
+            <li>Enter how many units of each item the robot should collect
+              (for example, 3 Cotton Rolls, 2 Syringes, 1 IV Bag).</li>
+            <li>Start the collection, and the robot will restock those items.</li>
+          </ul>
+          <p class="inst-note">
+            Try to give helpful amounts that keep the inventory at a reasonable level.
+          </p>
+        </div>
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/interactive_restock.png"
+               alt="Robot questions panel example">
+          <div class="inst-caption">
+            Example of a robot question during the interactive part.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robot video -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-kicker">Step 5</div>
+          <div class="inst-section-title">Robot video (bottom)</div>
+          <p>
+            At the bottom of the screen there is a <strong>video</strong> of the robot.
+            The video plays while the robot is restocking items.
+          </p>
+          <p class="inst-note">
+            You do not need to click on the video, but it gives you a visual sense
+            that the robot is “working” while items are being collected.
+            During this part, focus mainly on the Inventory, Current Task,
+            and Robot / Questions panels.
+          </p>
+        </div>
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/robot_video.png"
+               alt="Robot video area example">
+          <div class="inst-caption">
+            Screenshot of the robot video area.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="inst-card inst-cta">
+      <p>
+        This part will last about <strong>2.5 minutes</strong>.
+        When you are ready, click the button below to begin.
+      </p>
+      <button
+        type="button"
+        class="btn btn-primary btn-lg"
+        onclick="window.location='/exp?mode=interactive&hitId={{ hitId }}&assignmentId={{ assignmentId }}&workerId={{ workerId }}'">
+        Start Experiment (Interactive Robot)
+      </button>
+    </div>
+
+  </div>
 </div>
+
+
+

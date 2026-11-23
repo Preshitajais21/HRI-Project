@@ -1,130 +1,239 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>Hospital Robot Inventory Supervision</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="/static/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/css/style.css" rel="stylesheet" />
   <style>
-    :root { --border:#e5e7eb; --muted:#667085; --brand:#2563eb; --bg:#f7f7f9; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background: var(--bg); color:#0f172a; }
-    .topbar { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#fff; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; }
-    .tag { background:#eef3ff; border:1px solid #c8d6ff; border-radius:8px; padding:2px 8px; font-size:12px; margin-left:8px; }
-    .wrap { display:grid; grid-template-columns: 1.1fr 1fr; gap:16px; padding:16px; max-width:1200px; margin:0 auto; }
-    .card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .title { margin:0 0 8px; font-weight:700; }
-    .muted { color: var(--muted); font-size: 14px; }
-    .btn { border:1px solid #cfd3da; border-radius:10px; background:#fff; padding:8px 12px; cursor:pointer; }
-    .btn.primary { background: var(--brand); color:#fff; border-color: var(--brand); }
-    .grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:10px; }
-    .invItem { padding:10px; border:1px solid var(--border); border-radius:10px; background:#fafafa; display:flex; justify-content:space-between; align-items:center; }
-    .needRow { display:flex; gap:6px; flex-wrap:wrap; }
-    .chip { background:#eef2ff; border:1px solid #c7d2fe; padding:3px 8px; border-radius:999px; font-size:12px; }
-    .divider { height:1px; background: var(--border); margin:12px 0; }
-    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .righthead { display:flex; justify-content:space-between; align-items:center; }
-    .question { font-size:18px; margin:6px 0 12px; }
-    .question-opts { display:flex; gap:8px; flex-wrap:wrap; }
-    .statusbar { min-height:22px; font-size:14px; color:#334155; margin-top:6px; }
-    .popup { position: fixed; inset:0; background: rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:50; }
-    .modal { width:min(520px, 92vw); background:#fff; border-radius:12px; border:1px solid var(--border); padding:16px; }
-    .modal h3 { margin:0 0 8px; }
-    .modal .row { justify-content:flex-end; }
-    .pill { border:1px solid #cfd3da; border-radius:999px; padding:6px 10px; cursor:pointer; }
-    .pill.sel { background:#2563eb; color:#fff; border-color:#2563eb; }
+    body { background:#f6f7fb; }
+    .frame {
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      padding:14px;
+    }
+    .muted { color:#6b7280; }
+    .inv-row {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      border:1px solid #e5e7eb;
+      border-radius:8px;
+      padding:10px 12px;
+      margin-bottom:8px;
+      background:#fafafa;
+      cursor:pointer;
+    }
+    .inv-row:hover { background:#f1f5f9; }
+    .modal-veil{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.45);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:9998;
+    }
+    .modal-box{
+      width:min(520px,92vw);
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:16px;
+    }
+    .sel { outline:2px solid #2563eb; }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <div>
-      <strong>Hospital Robot Inventory Supervision</strong>
-      <span class="tag" id="conditionTag">Cond: …</span>
-      <span class="tag" id="buildTag">BUILD v2</span>
-    </div>
-    <div class="muted">Time <span id="timer">00:00</span></div>
-  </div>
 
-  <div class="wrap">
-    <!-- LEFT: Inventory & Tasks -->
-    <div class="card">
-      <h3 class="title">Inventory</h3>
-      <div id="invGrid" class="grid"></div>
 
-      <div class="divider"></div>
+  <!-- Core libs needed by PsiTurk -->
+  <script src="/static/lib/jquery-min.js"></script>
+  <script src="/static/lib/underscore-min.js"></script>
+  <script src="/static/lib/backbone-min.js"></script>
+  <script src="/static/lib/d3.v3.min.js"></script>
 
-      <div class="row">
-        <h3 class="title" style="margin:0;">Current Task</h3>
-        <span class="muted" id="taskTimer"></span>
-      </div>
-      <div id="taskBlock">
-        <div id="taskText" class="muted">Preparing first task…</div>
-        <div id="taskNeed" class="needRow" style="margin-top:6px;"></div>
-        <div class="row" style="margin-top:8px;">
-          <span class="muted">Click items in the inventory to fulfil requirements.</span>
-          <button class="btn" id="skipTaskBtn" title="Debug/demo only">Skip Task</button>
+
+  <script src="/static/js/psiturk.js"></script>
+  <script src="/static/lib/jquery-min.js"></script>
+  <script src="/static/lib/underscore-min.js"></script>
+  <script src="/static/lib/backbone-min.js"></script>
+  <script src="/static/lib/d3.v3.min.js"></script>
+
+
+  <script src="/static/js/psiturk.js"></script>
+  <script>
+    // PsiTurk variables injected by the template
+    var uniqueId       = "{{ uniqueId }}";
+    var adServerLoc    = "{{ adServerLoc }}";
+    var mode           = "{{ mode }}";
+    var condition      = "{{ condition }}";
+    var counterbalance = "{{ counterbalance }}";
+
+
+    // MTurk-style identifiers (may be empty when running locally)
+    var workerId     = "{{ workerId }}";
+    var assignmentId = "{{ assignmentId }}";
+    var hitId        = "{{ hitId }}";
+
+
+    // Fallback if uniqueId is somehow empty
+    if (!uniqueId) {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var w = params.get("workerId")     || workerId     || "NOWORKER";
+        var a = params.get("assignmentId") || assignmentId || "NOASSIGNMENT";
+        uniqueId = w + ":" + a;
+        console.log("Reconstructed uniqueId:", uniqueId);
+      } catch (e) {
+        uniqueId = "LOCAL_" + Date.now();
+        console.warn("Falling back to generated uniqueId:", uniqueId);
+      }
+    }
+
+
+    // Canonical participant id for ALL logging
+    window.PARTICIPANT_ID = uniqueId;
+
+
+    // Expose others globally if task.js needs them
+    window.WORKER_ID     = workerId;
+    window.ASSIGNMENT_ID = assignmentId;
+    window.HIT_ID        = hitId;
+
+
+    // PsiTurk instance
+    window.psiturk = new PsiTurk(uniqueId, adServerLoc, mode);
+  </script>
+
+  <!-- TOP BAR -->
+  <nav class="navbar navbar-light" style="background:#fff;border-bottom:1px solid #e5e7eb;">
+    <div class="container-fluid">
+      <div class="row w-100 align-items-center">
+        <div class="col-4 text-start">
+          <span class="navbar-brand mb-0 h5">Hospital Robot Inventory Supervision</span>
         </div>
-        <div id="taskStatus" class="statusbar"></div>
+        <div class="col-4 text-center">
+          <span class="muted">Time <span id="timer">00:00</span></span>
+        </div>
+        <div class="col-4 text-end"></div>
       </div>
     </div>
+  </nav>
 
-    <!-- RIGHT: Robot & Popups -->
-    <div class="card">
-      <div class="righthead">
-        <h3 class="title">Robot / Questions</h3>
-        <div class="row">
-          <button class="btn" id="showRobotBtn">Show Robot</button>
+
+  <!-- MAIN LAYOUT -->
+  <div class="container py-3">
+    <div class="row g-3">
+
+
+      <!-- LEFT: INVENTORY -->
+      <div class="col-lg-4">
+        <div class="frame">
+          <h5 class="mb-2">Inventory</h5>
+          <div id="inventoryList" class="mb-1"></div>
+          <div class="muted" style="font-size:0.85rem;">
+            Click an item name to send 1 unit (when it is part of a task).
+          </div>
         </div>
       </div>
 
-      <div id="robotQuestionBlock">
-        <div class="question" id="qText">Waiting for robot…</div>
-        <div class="question-opts" id="qOptions"></div>
+
+      <!-- CENTER: CURRENT TASK -->
+      <div class="col-lg-4">
+        <div class="frame">
+          <h5 class="mb-2">Current Task</h5>
+          <div id="taskStatus" class="muted">Preparing first task…</div>
+          <div id="taskReq" class="mt-2"></div>
+          <button id="skipTaskBtn" class="btn btn-outline-secondary btn-sm mt-2">
+            Submit Task
+          </button>
+        </div>
       </div>
 
-      <div class="divider"></div>
 
-      <div class="row">
-        <strong>Awareness Check</strong>
-        <span class="muted">Random SA pop-ups will appear</span>
+      <!-- RIGHT: ROBOT / QUESTIONS -->
+      <div class="col-lg-4">
+        <div class="frame">
+          <h5 class="mb-2">Robot / Questions</h5>
+          <div id="robotPrompt" class="mb-2" style="display:none;"></div>
+          <div id="robotStatus" class="muted">Waiting for robot…</div>
+
+
+          <hr>
+          <h6 class="mb-1">Workload</h6>
+          <div id="wlMini" class="muted">No WL rating yet.</div>
+        </div>
       </div>
+    </div>
 
-      <div class="statusbar" id="robotStatus">Status: Idle…</div>
-      <div class="statusbar" id="silentStatus"></div>
+
+    <!-- ROBOT VIDEO ROW -->
+    <div class="row g-3 mt-2">
+      <div class="col-12">
+        <div class="frame">
+          <h6 class="mb-2">Robot Camera</h6>
+          <div style="border-radius:8px;overflow:hidden;background:#000;">
+            <video id="robotVideo"
+                   muted
+                   loop
+                   playsinline
+                   preload="auto"
+                   style="width:100%;height:auto;max-height:360px;display:block;">
+              <source src="/static/robot/videos/moxi1.webm" type="video/webm" />
+              Your browser does not support HTML5 video.
+            </video>
+            <div class="muted mt-1" style="font-size:0.85rem;">
+              The video plays while the robot is restocking.
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Workload popup -->
-  <div class="popup" id="wlPopup">
-    <div class="modal">
-      <h3>Rate your workload right now</h3>
-      <p class="muted" style="margin-top:0;">1 = low, 2 = medium, 3 = high</p>
-      <div class="row" id="wlChoices">
-        <span class="pill" data-v="1">1</span>
-        <span class="pill" data-v="2">2</span>
-        <span class="pill" data-v="3">3</span>
+
+  <!-- WORKLOAD POPUP -->
+  <div id="wlPopup" class="modal-veil">
+    <div class="modal-box">
+      <h5 class="mb-1">Rate your workload right now</h5>
+      <div class="muted mb-2">1 = low, 2 = medium, 3 = high</div>
+      <div id="wlChoices" class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" data-v="1">1</button>
+        <button class="btn btn-outline-secondary" data-v="2">2</button>
+        <button class="btn btn-outline-secondary" data-v="3">3</button>
       </div>
-      <div class="row" style="margin-top:12px;">
-        <button class="btn" id="wlClose">Submit</button>
+      <div class="text-end mt-3">
+        <button id="wlSubmit" class="btn btn-primary">Submit</button>
       </div>
     </div>
   </div>
 
-  <!-- SA popup -->
-  <div class="popup" id="saPopup">
-    <div class="modal">
-      <h3>Situational Awareness</h3>
-      <div id="saPrompt" class="muted" style="margin-top:0;">What is the robot doing now?</div>
-      <div class="row" id="saChoices" style="margin-top:8px;"></div>
-      <div class="row" style="margin-top:12px;">
-        <button class="btn" id="saClose">Submit</button>
-      </div>
-    </div>
-  </div>
 
-  <!-- Load main JS (cache-busted) -->
-  <script src="/static/js/task.js?v=inventory_v2"></script>
-</body>
-</html>
+  <script src="/static/lib/jquery-3.4.1.min.js"></script>
+  <script src="/static/lib/bootstrap.min.js"></script>
+  <script src="/static/js/utils.js"></script>
+  <script>
+    // Clear only experiment-specific state, NOT participant identity
+    try {
+      ['exp_inventory', 'exp_log', 'exp_summary'].forEach(function (k) {
+        window.sessionStorage.removeItem(k);
+      });
+    } catch (e) {
+      console.warn('Error clearing exp_* session keys:', e);
+    }
+  </script>
+  <script src="/static/js/task.js?v=two_phase_fix_2"></script>
+  </body>
+  </html>
+
+
+
+
+
+
 
 
 

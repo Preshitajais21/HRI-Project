@@ -1,0 +1,177 @@
+{% extends 'layouts/layout.html' %}
+
+
+{% block head %}
+{{ super() }}
+<meta charset="utf-8" />
+<title>Demographics</title>
+
+
+<!-- PsiTurk dependencies -->
+<script src="/static/lib/jquery-min.js"></script>
+<script src="/static/lib/underscore-min.js"></script>
+<script src="/static/lib/backbone-min.js"></script>
+<script src="/static/lib/d3.v3.min.js"></script>
+
+
+<!-- PsiTurk -->
+<script src="/static/js/psiturk.js"></script>
+<script>
+  // Use lowercase vars from custom.py
+  var uniqueId       = "{{ uniqueid }}";
+  var adServerLoc    = "{{ adserverloc }}";
+  var mode           = "{{ mode }}";
+  var condition      = "{{ condition }}";
+  var counterbalance = "{{ counterbalance }}";
+
+
+  var workerId     = "{{ workerid|default('') }}";
+  var assignmentId = "{{ assignmentid|default('') }}";
+  var hitId        = "{{ hitid|default('') }}";
+
+
+  var psiturk = new PsiTurk(uniqueId, adServerLoc, mode);
+</script>
+{% endblock %}
+
+
+{% block body %}
+<div class="container" style="max-width: 800px; margin-top: 30px;">
+  <h3>Demographics</h3>
+  <hr>
+
+
+  <form id="demoForm">
+
+
+    <div class="mb-3">
+      <label>Age (18–80)</label>
+      <input id="age" type="number" min="18" max="80" class="form-control" required>
+    </div>
+
+
+    <div class="mb-3">
+      <label>Gender</label>
+      <select id="gender" class="form-control" required>
+        <option disabled selected value="">Choose…</option>
+        <option>Female</option>
+        <option>Male</option>
+        <option>Non-binary / third gender</option>
+        <option>Prefer not to say</option>
+        <option>Other</option>
+      </select>
+    </div>
+
+
+    <div class="mb-3">
+      <label>Have you used psiTurk before?</label><br>
+      <label><input type="radio" name="used_psiturk" value="yes" required> Yes</label>
+      <label><input type="radio" name="used_psiturk" value="no" required> No</label>
+    </div>
+
+
+    <div class="mb-3">
+      <label>Have you worked with robots before?</label><br>
+      <label><input type="radio" name="used_robots" value="yes" required> Yes</label>
+      <label><input type="radio" name="used_robots" value="no" required> No</label>
+    </div>
+
+
+    <div class="text-end">
+      <button type="submit" class="btn btn-primary">Continue</button>
+    </div>
+
+
+  </form>
+</div>
+
+
+<script>
+function isPlaceholder(s) {
+  return typeof s === "string" && s.indexOf("{") !== -1;
+}
+
+
+document.getElementById("demoForm").addEventListener("submit", function(e){
+  e.preventDefault();
+
+
+  // --- Get IDs from URL (debug or real MTurk) ---
+  var params = new URLSearchParams(window.location.search);
+  var wId     = params.get("workerId")     || workerId || "";
+  var aId     = params.get("assignmentId") || assignmentId || "";
+  var hId     = params.get("hitId")        || hitId || "";
+
+
+  // --- Build participant_id (single ID for the whole experiment) ---
+  var participantId = "";
+  if (wId && aId && !isPlaceholder(wId) && !isPlaceholder(aId)) {
+    participantId = wId + ":" + aId;
+  } else if (uniqueId && !isPlaceholder(uniqueId)) {
+    participantId = uniqueId;
+  } else {
+    participantId = "LOCAL_" + Date.now();
+  }
+
+
+  // --- Save IDs to sessionStorage so ALL later pages see the same values ---
+  sessionStorage.setItem("participant_id", participantId);
+  sessionStorage.setItem("worker_id", wId);
+  sessionStorage.setItem("assignment_id", aId);
+  sessionStorage.setItem("hit_id", hId);
+
+
+  // --- Prepare demographics payload for CSV ---
+  var dataRow = {
+    participant_id: participantId,
+    worker_id: wId,
+    assignment_id: aId,
+    hit_id: hId,
+    age: document.getElementById("age").value,
+    gender: document.getElementById("gender").value,
+    used_psiturk: document.querySelector("input[name='used_psiturk']:checked").value,
+    robot_exp: document.querySelector("input[name='used_robots']:checked").value,
+    q_rt_ms: null,
+    submitted_at_iso: new Date().toISOString()
+  };
+
+
+  // --- Save into demographicsdata.csv on the server ---
+  try {
+    $.ajax({
+      type: "POST",
+      url: "/record_demographics",
+      data: { demographics: JSON.stringify(dataRow) },
+      async: true
+    });
+  } catch (err) {
+    console.log("Error sending demographics:", err);
+  }
+
+
+  // --- Also log to PsiTurk (with participant_id) ---
+  var data = {
+    phase: "demographics",
+    participant_id: participantId,
+    age: dataRow.age,
+    gender: dataRow.gender,
+    used_psiturk: dataRow.used_psiturk,
+    used_robots: dataRow.robot_exp
+  };
+
+
+  psiturk.recordUnstructuredData("demographics_" + Date.now(), JSON.stringify(data));
+
+
+  psiturk.saveData({
+    success: function(){ window.location = "/instructions/instruct-1.html" + window.location.search; },
+    error:   function(){ window.location = "/instructions/instruct-1.html" + window.location.search; }
+  });
+});
+</script>
+{% endblock %}
+
+
+
+
+

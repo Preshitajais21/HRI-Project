@@ -1,0 +1,270 @@
+{% extends 'layouts/layout.html' %}
+
+
+{% block head %}
+{{ super() }}
+<meta charset="utf-8" />
+<title>Post-questionnaire – Silent Robot</title>
+{% endblock %}
+
+
+{% block body %}
+<div class="container" style="max-width: 800px; margin-top: 32px; margin-bottom: 40px;">
+
+
+  <!-- Header card -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h3 class="card-title mb-2">Post-Questionnaire – Silent Robot</h3>
+      <p class="text-muted mb-0">
+        Please answer the questions below based on your experience with the
+        <strong>silent robot</strong>. Use the scale from
+        <strong>1 (strongly disagree)</strong> to
+        <strong>7 (strongly agree)</strong>.
+      </p>
+    </div>
+  </div>
+
+
+  <!-- Questionnaire card -->
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form id="postq_silent">
+        <p class="mb-3">
+          For each statement, choose a number from <strong>1</strong> to <strong>7</strong>.
+        </p>
+
+
+        <!-- Q1 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            1. Reliable
+          </label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for i in range(1,8) %}
+            <label class="form-check-label me-2">
+              <input class="form-check-input" type="radio" name="q_trust" value="{{ i }}" required>
+              {{ i }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+
+        <!-- Q2 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            2. Predictable
+          </label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for i in range(1,8) %}
+            <label class="form-check-label me-2">
+              <input class="form-check-input" type="radio" name="q_workload" value="{{ i }}" required>
+              {{ i }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+
+        <!-- Q3 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            3. Someone you can count on
+          </label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for i in range(1,8) %}
+            <label class="form-check-label me-2">
+              <input class="form-check-input" type="radio" name="q_sa" value="{{ i }}" required>
+              {{ i }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+
+        <!-- Q4 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            4. Accurate
+          </label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for i in range(1,8) %}
+            <label class="form-check-label me-2">
+              <input class="form-check-input" type="radio" name="q_clarity" value="{{ i }}" required>
+              {{ i }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+
+        <!-- Q5 -->
+        <div class="mb-4">
+          <label class="form-label fw-semibold">
+            5. Helpful
+          </label>
+          <div class="d-flex flex-wrap gap-2">
+            {% for i in range(1,8) %}
+            <label class="form-check-label me-2">
+              <input class="form-check-input" type="radio" name="q_useful" value="{{ i }}" required>
+              {{ i }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+
+        <div class="text-end">
+          <button type="submit" class="btn btn-primary px-4">
+            Continue
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+</div>
+
+
+<!-- PsiTurk + deps -->
+<script src="/static/lib/jquery-min.js"></script>
+<script src="/static/lib/underscore-min.js"></script>
+<script src="/static/lib/backbone-min.js"></script>
+<script src="/static/lib/d3.v3.min.js"></script>
+<script src="/static/js/psiturk.js"></script>
+
+
+<script>
+// Use lowercase template vars (psiTurk 3.x style, custom.py provides both)
+var uniqueId       = "{{ uniqueid }}";
+var adServerLoc    = "{{ adserverloc }}";
+var mode           = "{{ mode }}";
+var condition      = "{{ condition }}";
+var counterbalance = "{{ counterbalance }}";
+
+
+// Optional MTurk-style ids (may be empty locally)
+var workerId     = "{{ workerid|default('') }}";
+var assignmentId = "{{ assignmentid|default('') }}";
+var hitId        = "{{ hitid|default('') }}";
+
+
+var psiturk = new PsiTurk(uniqueId, adServerLoc, mode);
+
+
+function isPlaceholder(s) {
+  return typeof s === "string" && s.indexOf("{") !== -1;
+}
+function getIds() {
+  var pid = sessionStorage.getItem("participant_id") || "";
+  var wid = sessionStorage.getItem("worker_id") || "";
+  var aid = sessionStorage.getItem("assignment_id") || "";
+  var hid = sessionStorage.getItem("hit_id") || "";
+
+
+  if (!pid) {
+    var params = new URLSearchParams(window.location.search);
+    var w = params.get("workerId")     || workerId || "";
+    var a = params.get("assignmentId") || assignmentId || "";
+    var h = params.get("hitId")        || hitId || "";
+    if (w && a && !isPlaceholder(w) && !isPlaceholder(a)) {
+      pid = w + ":" + a;
+      wid = w; aid = a; hid = h;
+    } else if (uniqueId && !isPlaceholder(uniqueId)) {
+      pid = uniqueId;
+    } else {
+      pid = "LOCAL_" + Date.now();
+    }
+    sessionStorage.setItem("participant_id", pid);
+    if (wid) sessionStorage.setItem("worker_id", wid);
+    if (aid) sessionStorage.setItem("assignment_id", aid);
+    if (hid) sessionStorage.setItem("hit_id", hid);
+  }
+  return { participant_id: pid, worker_id: wid, assignment_id: aid, hit_id: hid };
+}
+
+
+document.addEventListener("DOMContentLoaded", function () {
+  var form = document.getElementById("postq_silent");
+  if (!form) return;
+
+
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var f = e.target;
+
+
+    var ids = getIds();
+
+
+    var q_reliable    = f.q_trust.value;
+    var q_predictable = f.q_workload.value;
+    var q_counton     = f.q_sa.value;
+    var q_accurate    = f.q_clarity.value;
+    var q_helpful     = f.q_useful.value;
+
+
+    // 1) Row for silent condition into questiondata_summary.csv
+    try {
+      $.ajax({
+        type: "POST",
+        url: "/record_questiondata",
+        data: {
+          questiondata: JSON.stringify({
+            participant_id: ids.participant_id,
+            condition: "silent",
+            reliable: q_reliable,
+            predictable: q_predictable,
+            counton: q_counton,
+            accurate: q_accurate,
+            helpful: q_helpful
+          })
+        },
+        async: true
+      });
+    } catch (err2) {
+      console.log("Error logging silent questionnaire:", err2);
+    }
+
+
+    // 2) PsiTurk logging (with participant_id)
+    var data = {
+      phase:         "post_silent",
+      participant_id: ids.participant_id,
+      reliable:      q_reliable,
+      predictable:   q_predictable,
+      counton:       q_counton,
+      accurate:      q_accurate,
+      helpful:       q_helpful
+    };
+
+
+    var key = "post_silent_" + Date.now();
+    var val = JSON.stringify(data);
+
+
+    try {
+      psiturk.recordUnstructuredData(key, val);
+      psiturk.saveData({
+        success: function () {
+          window.location = "/complete" + window.location.search;
+        },
+        error: function () {
+          window.location = "/complete" + window.location.search;
+        }
+      });
+    } catch (err3) {
+      console.log("Error saving silent questionnaire via psiturk:", err3);
+      window.location = "/complete" + window.location.search;
+    }
+  });
+});
+</script>
+{% endblock %}
+
+
+
+
+

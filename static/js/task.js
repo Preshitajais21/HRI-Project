@@ -1,578 +1,822 @@
-// Hospital Robot Inventory Supervision — MAIN PAGE (BUILD v3)
-// Conditions via ?cond=silent|interactive|yn
-// Duration via ?dur=SECONDS (e.g., 60 or 480). Optional &fast=1 to compress long intervals for demos.
-(function(){
-  const $ = s => document.querySelector(s);
+// ===== Helpers =====
+function qp(name, def = null) {
+  const u = new URL(location.href);
+  return u.searchParams.get(name) ?? def;
+}
+function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function choice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function setT(fn, ms) { const id = setTimeout(fn, ms); App.timers.push(id); return id; }
+function clearTimers() { App.timers.forEach(clearTimeout); App.timers = []; }
+function nowMs() { return Date.now(); }
 
-  // ---------- SessionStorage Keys ----------
-  const SS = {
-    startAt: 'hr_start_ms',
-    inventory: 'hr_inventory_json',
-    activeTask: 'hr_active_task_json',
-    nextTaskAt: 'hr_next_task_ms',
 
-    cond: 'hr_condition',
+const MODE = qp('mode', 'interactive');   // "interactive" or "silent"
 
-    currentQ: 'hr_currentQ',
-    qAnswered: 'hr_currentQ_ans',
 
-    restockPayload: 'hr_restock_payload_json',  // {items:{}, applied:"0"/"1"}
-    robotBusyUntil: 'hr_robot_busy_until_ms',   // timestamp while robot runs
-    robotBusyLabel: 'hr_robot_busy_label'       // e.g., "Restocking Cotton (+3)"
+function isPlaceholder(s) {
+  return typeof s === "string" && s.indexOf("{") !== -1;
+}
+
+
+// ===== ID helper: single source of truth via sessionStorage =====
+function getParticipantInfo() {
+  // 1) Primary source: sessionStorage (set in demographics)
+  var pid = sessionStorage.getItem("participant_id") || "";
+  var wid = sessionStorage.getItem("worker_id") || "";
+  var aid = sessionStorage.getItem("assignment_id") || "";
+  var hid = sessionStorage.getItem("hit_id") || "";
+
+
+  // 2) Fallback if somehow demographics was skipped
+  if (!pid) {
+    var params = new URLSearchParams(window.location.search);
+    var workerId     = params.get("workerId")     || "";
+    var assignmentId = params.get("assignmentId") || "";
+    var hitId        = params.get("hitId")        || "";
+
+
+    if (workerId && assignmentId && !isPlaceholder(workerId) && !isPlaceholder(assignmentId)) {
+      pid = workerId + ":" + assignmentId;
+      wid = workerId;
+      aid = assignmentId;
+      hid = hitId;
+    } else if (typeof uniqueId !== "undefined" && uniqueId && !isPlaceholder(uniqueId)) {
+      // Use PsiTurk's uniqueId if available
+      pid = uniqueId;
+    } else {
+      // Last-resort local id
+      pid = "LOCAL_" + Date.now();
+    }
+
+
+    sessionStorage.setItem("participant_id", pid);
+    if (wid) sessionStorage.setItem("worker_id", wid);
+    if (aid) sessionStorage.setItem("assignment_id", aid);
+    if (hid) sessionStorage.setItem("hit_id", hid);
+  }
+
+
+  return {
+    participant_id: pid,
+    worker_id: wid,
+    assignment_id: aid,
+    hit_id: hid
+  };
+}
+
+
+// ===== App state =====
+const App = {
+  mode: MODE,
+  durSec: 150,       // 2.5 minutes
+  startAt: null,
+  timers: [],
+  sessionOver: false,
+
+
+  log: [],
+  summary: { wl_answers: [], conditions: [], tasks: [], inventoryClicks: [] },
+
+
+  inv: null,
+  task: null,        // {id, req, prog, t0, clicksCount}
+  plan: { tasksSpawned: 0, maxTasks: 6, nextTaskAt: null },
+
+
+  condition: { active: false, mode: null, nextAllowedAt: 0 },
+  queue: { counts: { interactive: 3, silent: 2 }, nextPlannedAt: 0 },
+
+
+  robot: { collecting: false, feed: [] },
+
+
+  wl: { firstAfter: 60_000, every: 60_000, t: null, choice: null, opened: 0 }
+};
+
+
+// Starting inventory for *each* experiment
+const DEFAULT_INV = {
+  "Gloves": 12,
+  "Syringes": 12,
+  "Cotton Rolls": 14,
+  "IV Bags": 12,
+  "Tape": 14,
+  "Masks": 16
+};
+
+
+// Per-item collection duration (ms)
+const PER_ITEM_MS = 1500;
+
+
+// ===== Video helper =====
+function playRobotVideo(on) {
+  const v = document.getElementById('robotVideo');
+  if (!v) return;
+  if (on) {
+    v.play().catch(() => { });
+  } else {
+    v.pause();
+    v.currentTime = 0;
+  }
+}
+
+
+// ===== State I/O =====
+function saveState() {
+  sessionStorage.setItem('exp_inventory', JSON.stringify(App.inv));
+  sessionStorage.setItem('exp_log', JSON.stringify(App.log));
+  sessionStorage.setItem('exp_summary', JSON.stringify(App.summary));
+}
+
+
+function loadState() {
+  App.startAt = nowMs();
+
+
+  App.inv = { ...DEFAULT_INV };
+
+
+  App.log = [];
+  App.summary = {
+    wl_answers: [],
+    conditions: [],
+    tasks: [],
+    inventoryClicks: [],
+    mode: App.mode,
+    phase: App.mode,
+    startAt: App.startAt,
+    durSec: App.durSec
   };
 
-  // ---------- URL Params ----------
-  const qs = new URLSearchParams(location.search);
-  const COND = (qs.get('cond') || sessionStorage.getItem(SS.cond) || 'interactive').toLowerCase();
-  sessionStorage.setItem(SS.cond, COND);
 
-  let TOTAL_RUN_MS = (parseInt(qs.get('dur'), 10) || 60) * 1000; // default 1 minute
-  if (!isFinite(TOTAL_RUN_MS) || TOTAL_RUN_MS < 0) TOTAL_RUN_MS = 60 * 1000;
+  App.plan.tasksSpawned = 0;
+  App.plan.maxTasks = 6;
+  App.plan.nextTaskAt = App.startAt;
 
-  const FAST = qs.get('fast') === '1';
-  const scale = FAST ? 0.2 : 1.0;
 
-  // ---------- Timing knobs ----------
-  const WORKLOAD_RATING_EVERY_MS = 40_000 * scale;  // ← per request
-  const SA_EVERY_MS               = 50_000 * scale;  // ← per request
-  const NEXT_TASK_DELAY_MS        = 30_000 * scale;  // exactly 30s after completion
-  const YN_QUESTION_EVERY_MS      = 25_000 * scale;
-  const INTERACTIVE_Q_EVERY_MS    = 25_000 * scale;
-  const SILENT_RESTOCK_EVERY_MS   = (60_000 + Math.floor(Math.random()*30_000)) * scale; // 60–90s
-  const ROBOT_RUN_DURATION_MS     = (20_000 + Math.floor(Math.random()*10_000)); // 20–30s
-
-  // ---------- Logger (psiTurk-friendly) ----------
-  const Log = (() => {
-    const key = 'hr_log_events';
-    function now(){ return new Date().toISOString(); }
-    function pushLocal(evt){
-      const arr = JSON.parse(localStorage.getItem(key) || '[]');
-      arr.push(evt);
-      localStorage.setItem(key, JSON.stringify(arr));
-    }
-    function record(type, payload){
-      const row = { t: now(), type, ...payload };
-      if (window.psiTurk && typeof window.psiTurk.recordTrialData === 'function') {
-        const flat = {};
-        for (const [k,v] of Object.entries(row)){
-          flat[k] = (typeof v === 'object') ? JSON.stringify(v) : v;
-        }
-        try { window.psiTurk.recordTrialData(flat); } catch(e){ pushLocal(row); }
-      } else {
-        pushLocal(row);
-        if (console && console.log) console.log('[LOG]', row);
-      }
-    }
-    function flush(){
-      if (window.psiTurk && typeof window.psiTurk.saveData === 'function') {
-        try { window.psiTurk.saveData({success:()=>console.log('psiTurk saved')}); } catch(e){}
-      } else {
-        console.log('Local log (no psiTurk):', JSON.parse(localStorage.getItem(key) || '[]'));
-      }
-    }
-    return { record, flush };
-  })();
-
-  // ---------- Inventory Model ----------
-  const INITIAL_INV = {
-    Cotton: 12,
-    Syringe: 14,
-    Gloves: 10,
-    Gauze: 10,
-    Tape: 8,
-    'IV Bags': 6,
-    Mask: 12
-  };
-  let INV = loadJSON(SS.inventory) || { ...INITIAL_INV };
-  const ITEM_LIST = Object.keys(INV);
-
-  // ---------- Active Task (exactly one) ----------
-  let activeTask = loadJSON(SS.activeTask) || null;
-  let nextTaskAt = parseInt(sessionStorage.getItem(SS.nextTaskAt) || '0', 10) || 0;
-  let taskCountdownId = null;
-
-  // ---------- Timer Persistence ----------
-  function ensureStart(){
-    let start = sessionStorage.getItem(SS.startAt);
-    if (!start) {
-      start = String(Date.now());
-      sessionStorage.setItem(SS.startAt, start);
-    }
-    return parseInt(start, 10);
-  }
-  function fmtTime(ms){
-    const s = Math.max(0, Math.floor(ms/1000));
-    const mm = String(Math.floor(s/60)).padStart(2,'0');
-    const ss = String(s%60).padStart(2,'0');
-    return `${mm}:${ss}`;
+  if (App.mode === 'interactive') {
+    App.queue.counts = { interactive: 3, silent: 0 };
+  } else {
+    App.queue.counts = { interactive: 0, silent: 2 };
   }
 
-  // ---------- Utils ----------
-  function saveJSON(key, obj){ sessionStorage.setItem(key, JSON.stringify(obj)); }
-  function loadJSON(key){ try{ return JSON.parse(sessionStorage.getItem(key)); } catch(e){ return null; } }
-  function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-  function randomTask(){
-    // pick 2–3 distinct items with random small quantities (1–4)
-    const count = randInt(2,3);
-    const shuffled = [...ITEM_LIST].sort(()=>Math.random()-0.5);
-    const choose = shuffled.slice(0, count);
-    const need = {};
-    choose.forEach(it => need[it] = randInt(1,4));
-    return { id:`T${Date.now()}`, need, fulfilled:{} };
-  }
-  function taskRemaining(t){
-    const rem = {};
-    for (const k of Object.keys(t.need)){
-      const got = t.fulfilled[k] || 0;
-      rem[k] = Math.max(0, t.need[k]-got);
-    }
-    return rem;
-  }
-  function isTaskComplete(t){
-    return Object.values(taskRemaining(t)).every(v => v===0);
-  }
+  App.condition.nextAllowedAt = App.startAt;
+  App.queue.nextPlannedAt = App.startAt + 25_000;
 
-  // ---------- Render Inventory ----------
-  function renderInventory(){
-    const grid = $('#invGrid');
-    grid.innerHTML = '';
-    for (const item of ITEM_LIST){
-      const div = document.createElement('div');
-      div.className = 'invItem';
-      div.title = 'Click to allocate to the active task';
-      const label = document.createElement('span'); label.textContent = item;
-      const val = document.createElement('strong'); val.textContent = INV[item];
-      div.appendChild(label); div.appendChild(val);
-      div.addEventListener('click', ()=> useItemForTask(item));
-      grid.appendChild(div);
-    }
-  }
 
-  function useItemForTask(item){
-    if (!activeTask) return;
-    const rem = taskRemaining(activeTask);
-    if ((rem[item]||0) > 0 && INV[item] > 0){
-      const before = INV[item];
-      INV[item] -= 1;
-      activeTask.fulfilled[item] = (activeTask.fulfilled[item]||0) + 1;
-      saveJSON(SS.inventory, INV);
-      saveJSON(SS.activeTask, activeTask);
-      renderInventory();
-      renderTask();
+  saveState();
+}
 
-      Log.record('inventory_click', {
-        task_id: activeTask.id,
-        item,
-        before_qty: before,
-        after_qty: INV[item]
-      });
 
-      if (isTaskComplete(activeTask)){
-        $('#taskStatus').textContent = 'Task complete ✅';
-        Log.record('task_complete', {
-          task_id: activeTask.id,
-          need: activeTask.need,
-          fulfilled: activeTask.fulfilled
-        });
-        activeTask = null; saveJSON(SS.activeTask, activeTask);
-        scheduleNextTaskAfterCompletion();
-      }
-    } else {
-      $('#taskStatus').textContent = 'Cannot use this item now.';
-    }
-  }
+// ===== Logging & UI feed =====
+function L(ev, data = {}) { App.log.push({ t: nowMs(), ev, ...data }); saveState(); }
+function pushRobotFeed(msg) {
+  const MAX = 6;
+  const tStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  App.robot.feed.push({ t: tStr, msg });
+  if (App.robot.feed.length > MAX) App.robot.feed.shift();
+  document.getElementById('robotStatus').innerHTML =
+    App.robot.feed.map(e => `<div><span class="muted">${e.t}</span> — ${e.msg}</div>`).join('') || 'Waiting for robot…';
+  L('feed', { msg });
+}
 
-  // ---------- Task Scheduling & UI ----------
-  function renderTask(){
-    const text = $('#taskText');
-    const needDiv = $('#taskNeed');
-    if (!activeTask){
-      text.textContent = 'No active task. Waiting for the next task…';
-      needDiv.innerHTML = '';
-      return;
-    }
-    const rem = taskRemaining(activeTask);
-    text.textContent = 'Fulfil the request by clicking inventory items:';
-    needDiv.innerHTML = '';
-    for (const [k,v] of Object.entries(rem)){
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = `${k}: ${v} remaining`;
-      needDiv.appendChild(chip);
-    }
-  }
 
-  function showNextTaskCountdown(){
-    clearInterval(taskCountdownId);
-    taskCountdownId = setInterval(()=>{
-      if (!nextTaskAt){ $('#taskTimer').textContent = ''; return; }
-      const remain = Math.max(0, nextTaskAt - Date.now());
-      if (remain <= 0){
-        $('#taskTimer').textContent = '';
-        clearInterval(taskCountdownId);
-        return;
-      }
-      $('#taskTimer').textContent = `Next task in ${fmtTime(remain)}`;
-    }, 250);
-  }
-
-  function scheduleNextTaskAfterCompletion(){
-    const now = Date.now();
-    nextTaskAt = now + NEXT_TASK_DELAY_MS;
-    sessionStorage.setItem(SS.nextTaskAt, String(nextTaskAt));
-    $('#taskTimer').textContent = `Next task in ${fmtTime(NEXT_TASK_DELAY_MS)}`;
-    showNextTaskCountdown();
-  }
-
-  function spawnTaskNow(){
-    activeTask = randomTask();
-    saveJSON(SS.activeTask, activeTask);
-    renderTask();
-    $('#taskStatus').textContent = 'New task appeared.';
-    Log.record('task_spawn', { task_id: activeTask.id, need: activeTask.need });
-    // Clear nextTaskAt since we just spawned
-    nextTaskAt = 0;
-    sessionStorage.setItem(SS.nextTaskAt, '0');
-    $('#taskTimer').textContent = '';
-    clearInterval(taskCountdownId);
-  }
-
-  function maybeSpawnTask(){
-    if (activeTask) return; // only one task at a time
-    if (nextTaskAt && Date.now() >= nextTaskAt){
-      spawnTaskNow();
-    }
-  }
-
-  // ---------- Workload Popup (every 40s) ----------
-  const Workload = (() => {
-    const POPUP_MS = WORKLOAD_RATING_EVERY_MS;
-    let timer = null;
-    let selected = null;
-    let popupOpenAt = 0;
-
-    function open(){
-      selected = null;
-      popupOpenAt = performance.now();
-      const dlg = $('#wlPopup'); if (!dlg) return;
-      dlg.style.display = 'flex';
-      document.querySelectorAll('#wlChoices [data-v]').forEach(btn=>{
-        btn.classList.remove('sel');
-        btn.onclick = () => {
-          document.querySelectorAll('#wlChoices [data-v]').forEach(b=>b.classList.remove('sel'));
-          btn.classList.add('sel');
-          selected = btn.getAttribute('data-v');
-        };
-      });
-    }
-    function close(){ const dlg = $('#wlPopup'); if (dlg) dlg.style.display = 'none'; }
-    function submit(){
-      const rt_ms = Math.round(performance.now() - popupOpenAt);
-      Log.record('workload_rating', { rating: selected ? Number(selected) : null, rt_ms });
-      close(); schedule();
-    }
-    function schedule(){ clearTimeout(timer); timer = setTimeout(open, POPUP_MS); }
-    function init(){ const btn = $('#wlSubmit'); if (btn) btn.onclick = submit; }
-    return { init, schedule };
-  })();
-
-  // ---------- SA Popup (every 50s) ----------
-  const SA = (() => {
-    const POPUP_MS = SA_EVERY_MS;
-    let timer = null;
-    let openAt = 0;
-    let current = null;
-
-    function robotState(){
-      const until = parseInt(sessionStorage.getItem(SS.robotBusyUntil) || '0', 10);
-      const label = sessionStorage.getItem(SS.robotBusyLabel) || '';
-      const stocking = (until && Date.now() < until);
-      let item = null;
-      const m = /Restocking\s+([^(\+]+)/i.exec(label);
-      if (m) item = m[1].trim();
-      return { stocking, item, label };
-    }
-
-    function open(){
-      const dlg = $('#saPopup'); if (!dlg) return;
-      openAt = performance.now();
-      const gt = robotState();
-      const prompt = $('#saPrompt');
-      const choices = $('#saChoices'); choices.innerHTML = '';
-
-      if (Math.random() < 0.5){
-        current = { kind: 'state', prompt: 'Is the robot currently stocking or idle?', options: ['Stocking','Idle'],
-                    correct: gt.stocking ? 'Stocking' : 'Idle' };
-      } else {
-        const inv = JSON.parse(sessionStorage.getItem(SS.inventory) || '{}');
-        const keys = Object.keys(inv).length ? Object.keys(inv) : ['Cotton','Syringe','Gloves','Gauze','Tape','IV Bags','Mask'];
-        current = { kind: 'activity', prompt: 'Which item is the robot focused on (if any)?',
-                    options: ['None', ...keys], correct: gt.item || 'None' };
-      }
-
-      prompt.textContent = current.prompt;
-      let selected = null;
-      current.options.forEach(o=>{
-        const b = document.createElement('button'); b.className='btn'; b.textContent=o;
-        b.onclick = ()=>{
-          document.querySelectorAll('#saChoices .btn').forEach(x=>x.style.outline='');
-          b.style.outline = '2px solid #2563eb';
-          selected = o;
-        };
-        choices.appendChild(b);
-      });
-
-      const submit = $('#saSubmit');
-      submit.onclick = ()=>{
-        const rt_ms = Math.round(performance.now() - openAt);
-        const is_correct = (selected != null) ? (selected === current.correct) : null;
-        Log.record('sa_response', {
-          kind: current.kind,
-          prompt: current.prompt,
-          selected: selected || null,
-          correct: current.correct,
-          is_correct,
-          rt_ms
-        });
-        dlg.style.display = 'none';
-        schedule();
-      };
-
-      dlg.style.display = 'flex';
-    }
-
-    function schedule(){ clearTimeout(timer); timer = setTimeout(open, POPUP_MS); }
-    return { schedule };
-  })();
-
-  // ---------- Robot Questions (YN or Interactive) ----------
-  let qTimerId=null;
-
-  function askYNQuestion(){
-    const item = ITEM_LIST[randInt(0, ITEM_LIST.length-1)];
-    const threshold = randInt(3, 8);
-    const text = `Do we have at least ${threshold} ${item}?`;
-    const correct = (INV[item] >= threshold) ? 'Yes' : 'No';
-    showQuestion({ id:`YN_${Date.now()}`, text, options:['Yes','No'], correct });
-  }
-
-  function askInteractiveQuestion(){
-    const text = `Robot ready: specify items to collect (use "Show Robot").`;
-    showQuestion({ id:`INT_${Date.now()}`, text, options:['OK'], correct:'OK' });
-  }
-
-  function showQuestion(q){
-    sessionStorage.setItem(SS.currentQ, q.id);
-    sessionStorage.setItem(SS.qAnswered, '0');
-    $('#qText').textContent = q.text;
-    const box = $('#qOptions'); box.innerHTML='';
-    q.options.forEach(opt=>{
-      const b = document.createElement('button'); b.className='btn'; b.textContent = opt;
-      b.onclick = ()=>{
-        const correct = (opt === q.correct);
-        $('#robotStatus').textContent = `Answered: ${opt} (${correct ? 'correct' : 'received'})`;
-        Log.record('robot_question_answer', { qid:q.id, text:q.text, answer:opt, correct });
-        sessionStorage.setItem(SS.qAnswered, '1');
-        scheduleNextQuestion();
-      };
-      box.appendChild(b);
-    });
-  }
-
-  function restoreQuestionIfAny(){
-    const qid = sessionStorage.getItem(SS.currentQ) || '';
-    const ans = sessionStorage.getItem(SS.qAnswered) === '1';
-    if (qid && !ans){
-      if (qid.startsWith('YN_')){
-        $('#qText').textContent = 'YN question pending — please answer.';
-        const box = $('#qOptions'); box.innerHTML='';
-        ['Yes','No'].forEach(opt=>{
-          const b = document.createElement('button'); b.className='btn'; b.textContent=opt;
-          b.onclick = ()=>{
-            $('#robotStatus').textContent = `Answered: ${opt}`;
-            Log.record('robot_question_answer', { qid, text:'YN (restored)', answer:opt, correct:null });
-            sessionStorage.setItem(SS.qAnswered, '1');
-            scheduleNextQuestion();
-          };
-          box.appendChild(b);
-        });
-      } else {
-        $('#qText').textContent = 'Robot awaiting collection input (use "Show Robot").';
-        const box = $('#qOptions'); box.innerHTML='';
-        const b = document.createElement('button'); b.className='btn'; b.textContent='OK';
-        b.onclick = ()=>{
-          Log.record('robot_question_answer', { qid, text:'INT (restored)', answer:'OK', correct:true });
-          sessionStorage.setItem(SS.qAnswered,'1');
-          scheduleNextQuestion();
-        };
-        box.appendChild(b);
-      }
-      return true;
-    }
-    return false;
-  }
-
-  function scheduleNextQuestion(){
-    clearTimeout(qTimerId);
-    if (COND === 'yn'){
-      qTimerId = setTimeout(askYNQuestion, YN_QUESTION_EVERY_MS);
-    } else if (COND === 'interactive'){
-      qTimerId = setTimeout(askInteractiveQuestion, INTERACTIVE_Q_EVERY_MS);
-    } else {
-      $('#qText').textContent = 'Robot is operating silently.';
-      $('#qOptions').innerHTML = '';
-    }
-  }
-
-  // ---------- Silent Restock (background autonomous) ----------
-  let silentTimerId=null, silentBusyTimerId=null;
-  function scheduleSilentRestock(){
-    if (COND !== 'silent') return;
-    clearTimeout(silentTimerId);
-    const wait = SILENT_RESTOCK_EVERY_MS;
-    silentTimerId = setTimeout(runSilentRestock, wait);
-  }
-
-  function runSilentRestock(){
-    if (COND !== 'silent') return;
-    // pick lowest-count item
-    let minItem = null, minVal = Infinity;
-    for (const [k,v] of Object.entries(INV)){
-      if (v < minVal){ minVal=v; minItem=k; }
-    }
-    const amount = randInt(2,5);
-    const until = Date.now() + ROBOT_RUN_DURATION_MS;
-    sessionStorage.setItem(SS.robotBusyUntil, String(until));
-    sessionStorage.setItem(SS.robotBusyLabel, `Restocking ${minItem} (+${amount})`);
-    $('#silentStatus').textContent = `Silent: ${sessionStorage.getItem(SS.robotBusyLabel)}…`;
-    Log.record('robot_silent_run_start', { item:minItem, amount });
-
-    clearTimeout(silentBusyTimerId);
-    silentBusyTimerId = setTimeout(()=>{
-      INV[minItem] = (INV[minItem]||0) + amount;
-      saveJSON(SS.inventory, INV);
-      renderInventory();
-      $('#silentStatus').textContent = `Silent: completed restock of ${minItem} (+${amount}).`;
-      Log.record('robot_silent_run_end', { item:minItem, amount });
-      scheduleSilentRestock();
-      sessionStorage.removeItem(SS.robotBusyUntil);
-      sessionStorage.removeItem(SS.robotBusyLabel);
-    }, ROBOT_RUN_DURATION_MS);
-  }
-
-  // ---------- Apply pending interactive restock from robot page ----------
-  function applyPendingRestockIfAny(){
-    const payload = loadJSON(SS.restockPayload);
-    if (!payload || payload.applied === '1') return;
-    const until = parseInt(sessionStorage.getItem(SS.robotBusyUntil) || '0', 10);
-    if (until && Date.now() < until) return; // still busy; try later
-
-    for (const [k,v] of Object.entries(payload.items||{})){
-      INV[k] = (INV[k]||0) + v;
-    }
-    saveJSON(SS.inventory, INV);
-    renderInventory();
-    payload.applied = '1';
-    saveJSON(SS.restockPayload, payload);
-    $('#robotStatus').textContent = 'Restock from robot applied.';
-    Log.record('robot_restock_applied', { items: payload.items || {} });
-  }
-
-  // ---------- Timer & Stop ----------
-  let rafId=null, stopId=null;
-  function startTimer(){
-    const startAt = ensureStart();
-    function tick(){
-      const elapsed = Date.now() - startAt;
-      $('#timer').textContent = fmtTime(elapsed);
-      if (isFinite(TOTAL_RUN_MS) && TOTAL_RUN_MS>0 && elapsed >= TOTAL_RUN_MS){
-        stopExperiment();
-        return;
-      }
-      rafId = requestAnimationFrame(tick);
-    }
-    rafId = requestAnimationFrame(tick);
-    if (isFinite(TOTAL_RUN_MS) && TOTAL_RUN_MS>0){
-      const remain = Math.max(0, TOTAL_RUN_MS - (Date.now()-startAt));
-      stopId = setTimeout(stopExperiment, remain);
-    }
-  }
-  function stopExperiment(){
-    if (rafId) cancelAnimationFrame(rafId);
-    clearTimeout(stopId);
-    clearTimeout(qTimerId);
-    clearTimeout(silentTimerId);
-    clearTimeout(silentBusyTimerId);
-    clearInterval(taskCountdownId);
-    $('#robotStatus').textContent = 'Session complete.';
-    Log.flush();
-  }
-
-  // ---------- Show Robot ----------
-  function showRobot(){
-    // If interactive, mark busy window so main page won't apply early
-    if (COND === 'interactive'){
-      const until = Date.now() + ROBOT_RUN_DURATION_MS;
-      sessionStorage.setItem(SS.robotBusyUntil, String(until));
-      sessionStorage.setItem(SS.robotBusyLabel, 'Collecting (per user input)…');
-    }
-    const url = `/static/robot/index.html?cond=${encodeURIComponent(COND)}`;
-    location.href = url;
-  }
-
-  // ---------- Wire & Boot ----------
-  function wire(){
-    const condTag = $('#conditionTag'); if (condTag) condTag.textContent = `Cond: ${COND.toUpperCase()}`;
-    $('#showRobotBtn')?.addEventListener('click', showRobot);
-    $('#skipTaskBtn')?.addEventListener('click', ()=>{
-      if (activeTask){
-        Log.record('task_skipped', { task_id: activeTask.id, need: activeTask.need, fulfilled: activeTask.fulfilled });
-        activeTask = null; saveJSON(SS.activeTask, activeTask);
-        $('#taskStatus').textContent = 'Task skipped.';
-        renderTask();
-        scheduleNextTaskAfterCompletion();
-      }
-    });
-
-    // Init/plan popups
-    Workload.init();
-    Workload.schedule();
-    SA.schedule();
-
-    // Persist logs on exit
-    window.addEventListener('beforeunload', ()=> Log.flush());
-  }
-
-  function boot(){
-    renderInventory();
-    applyPendingRestockIfAny();
-
-    // First task policy: if nothing active and no 'nextTaskAt', spawn immediately
-    if (!activeTask && !nextTaskAt){
-      spawnTaskNow();
-    } else {
-      renderTask();
-      showNextTaskCountdown();
-    }
-
-    if (!restoreQuestionIfAny()) scheduleNextQuestion();
-    if (COND === 'silent') scheduleSilentRestock();
-
-    // 1s heartbeat: task spawn + pending restock
-    setInterval(()=>{ maybeSpawnTask(); applyPendingRestockIfAny(); }, 1000);
-
-    startTimer();
-  }
-
-  window.addEventListener('DOMContentLoaded', ()=>{
-    // Optional: show build tag if present in HTML
-    const buildTag = $('#buildTag'); if (buildTag) buildTag.textContent = 'BUILD v3';
-    wire();
-    boot();
+// ===== Inventory =====
+function renderInventory() {
+  const wrap = document.getElementById('inventoryList');
+  wrap.innerHTML = '';
+  Object.keys(App.inv).forEach(name => {
+    const row = document.createElement('div');
+    row.className = 'inv-row';
+    row.setAttribute('data-item', name);
+    row.innerHTML =
+      `<strong>${name}<span class="badge rounded-pill bg-secondary ms-2 inv-count" data-count="${name}">${App.inv[name]}</span></strong>` +
+      `<span class="muted">click to send</span>`;
+    wrap.appendChild(row);
   });
 
+
+  wrap.onclick = e => {
+    if (App.sessionOver) return;
+    const row = e.target.closest('[data-item]');
+    if (!row || !App.task) return;
+    const item = row.getAttribute('data-item');
+    if (!(App.task.req[item] || 0)) return;
+    if ((App.inv[item] ?? 0) <= 0) return;
+
+
+    App.inv[item] -= 1;
+    App.task.prog[item] = (App.task.prog[item] || 0) + 1;
+    App.task.clicksCount = (App.task.clicksCount || 0) + 1;
+
+
+    const badge = document.querySelector(`[data-count="${CSS.escape(item)}"]`);
+    if (badge) badge.textContent = App.inv[item];
+
+
+    App.summary.inventoryClicks.push({ t: nowMs(), item });
+    L('inventory_click', { item });
+    saveState();
+    renderTask();
+  };
+}
+
+
+// ===== Tasks =====
+function renderTask() {
+  var st = document.getElementById('taskStatus');
+  var rq = document.getElementById('taskReq');
+
+
+  if (!App.task) {
+    var nextIn = 0;
+    if (App.plan.nextTaskAt) {
+      nextIn = Math.max(0, Math.ceil((App.plan.nextTaskAt - nowMs()) / 1000));
+    }
+
+
+    if (App.plan.tasksSpawned >= App.plan.maxTasks) {
+      st.textContent = 'All tasks done.';
+    } else if (App.plan.nextTaskAt) {
+      st.textContent = 'Next task in ~' + nextIn + 's';
+    } else {
+      st.textContent = 'Waiting for task…';
+    }
+
+
+    rq.innerHTML = '';
+    return;
+  }
+
+
+  var done = true;
+  Object.keys(App.task.req).forEach(function (it) {
+    var need = App.task.req[it];
+    if ((App.task.prog[it] || 0) < need) {
+      done = false;
+    }
+  });
+
+
+  if (done) {
+    st.textContent =
+      'All requested items sent. You can click "Submit Task" whenever you are ready.';
+  } else {
+    st.textContent =
+      'Click an item name to send 1 unit. You can click "Submit Task" at any time.';
+  }
+
+
+  var htmlParts = [];
+  Object.keys(App.task.req).forEach(function (it) {
+    var need = App.task.req[it];
+    var have = App.task.prog[it] || 0;
+    htmlParts.push(
+      '<div>• ' + it + ': <strong>' + have + '/' + need + '</strong> sent</div>'
+    );
+  });
+  rq.innerHTML = htmlParts.join('');
+}
+
+
+function maybeSpawnTask(now) {
+  if (App.sessionOver) return;
+  if (!App.task && App.plan.tasksSpawned < App.plan.maxTasks && now >= App.plan.nextTaskAt) {
+    const items = Object.keys(App.inv);
+    const k = rnd(2, 3);
+    const pick = new Set();
+    while (pick.size < k) pick.add(items[rnd(0, items.length - 1)]);
+    const req = {}, prog = {};
+    [...pick].forEach(it => { req[it] = rnd(2, 4); prog[it] = 0; });
+
+
+    App.task = { id: 'T' + now, req, prog, t0: now, clicksCount: 0 };
+    App.plan.tasksSpawned += 1;
+    App.plan.nextTaskAt = Infinity;
+
+
+    App.summary.tasks.push({ t: now, id: App.task.id, items: req });
+    L('task_spawn', { id: App.task.id, items: req });
+    saveState();
+    renderTask();
+  }
+}
+
+
+// ===== Right-panel interactive collector =====
+function renderCollectorUI() {
+  const b = document.getElementById('robotPrompt');
+  const items = Object.keys(App.inv);
+  const rows = items.map(it =>
+    `<div class="collect-row d-flex align-items-center justify-content-between">
+      <div><strong>${it}</strong><span class="badge rounded-pill bg-secondary ms-2" data-rcount="${it}">${App.inv[it]}</span></div>
+      <input type="number" min="0" max="3" step="1" class="form-control" style="width:90px" data-collect="${it}" placeholder="0">
+    </div>`
+  ).join('');
+
+
+  b.innerHTML =
+    `<div class="alert alert-info">
+      <div class="mb-2">Robot requests items. Enter how many to collect (max 3 each) and start collection.</div>
+      <div class="d-flex flex-column gap-2">${rows}</div>
+      <div class="text-end mt-3"><button id="startCollectBtn" class="btn btn-primary btn-sm">Start Collection</button></div>
+    </div>`;
+  b.style.display = 'block';
+
+
+  document.getElementById('startCollectBtn').onclick = () => {
+    if (App.robot.collecting) return;
+
+
+    const payload = {};
+    document.querySelectorAll('[data-collect]').forEach(inp => {
+      const name = inp.getAttribute('data-collect');
+      let n = parseInt(inp.value || '0', 10);
+      if (isNaN(n)) n = 0;
+      if (n > 3) n = 3;
+      if (n > 0) payload[name] = n;
+    });
+
+
+    if (Object.keys(payload).length === 0) {
+      pushRobotFeed('Enter amounts > 0 before starting (max 3 each).');
+      return;
+    }
+
+
+    const totalUnits = Object.values(payload).reduce((acc, v) => acc + Number(v || 0), 0);
+    let durationMs = totalUnits * PER_ITEM_MS;
+    if (durationMs <= 0) durationMs = PER_ITEM_MS;
+
+
+    App.robot.collecting = true;
+    document.querySelectorAll('[data-collect]').forEach(inp => inp.disabled = true);
+    document.getElementById('startCollectBtn').disabled = true;
+
+
+    pushRobotFeed(`Collecting… (~${(durationMs / 1000).toFixed(1)}s)`);
+    playRobotVideo(true);
+
+
+    setT(() => {
+      Object.entries(payload).forEach(([k, v]) => {
+        App.inv[k] = (App.inv[k] ?? 0) + Number(v);
+      });
+      saveState();
+      renderInventory();
+      renderTask();
+      Object.keys(payload).forEach(k => {
+        const badge = document.querySelector(`[data-rcount="${CSS.escape(k)}"]`);
+        if (badge) badge.textContent = App.inv[k];
+      });
+      pushRobotFeed('Collection finished.');
+      App.summary.conditions.push({
+        t: nowMs(),
+        type: 'interactive',
+        subtype: 'collect',
+        duration_ms: durationMs,
+        extra: { payload: payload, total_units: totalUnits }
+      });
+      L('interactive_collect_done', { payload, duration_ms: durationMs, total_units: totalUnits });
+      clearRobotPrompt();
+      App.robot.collecting = false;
+      playRobotVideo(false);
+      endConditionWithGap(20_000);
+    }, durationMs);
+  };
+}
+
+
+function clearRobotPrompt() {
+  const b = document.getElementById('robotPrompt');
+  b.innerHTML = '';
+  b.style.display = 'none';
+}
+
+
+// ===== Conditions =====
+function scheduleNextCondition(ms) {
+  const t = nowMs() + ms;
+  App.condition.nextAllowedAt = t;
+  App.queue.nextPlannedAt = t;
+}
+
+
+function canLaunchCondition() {
+  if (App.sessionOver) return false;
+  const now = nowMs();
+  return (!App.condition.active) &&
+    now >= App.condition.nextAllowedAt &&
+    now >= App.queue.nextPlannedAt;
+}
+
+
+function remainingTypes() {
+  const left = [];
+  if (App.mode === 'interactive' && App.queue.counts.interactive > 0) left.push('interactive');
+  if (App.mode === 'silent' && App.queue.counts.silent > 0) left.push('silent');
+  return left;
+}
+
+
+function launchCondition() {
+  if (!canLaunchCondition()) return false;
+  const choices = remainingTypes();
+  if (choices.length === 0) return false;
+  const mode = choice(choices);
+  App.queue.counts[mode] -= 1;
+  beginCondition(mode);
+  return true;
+}
+
+
+function beginCondition(mode) {
+  if (App.sessionOver) return;
+  App.condition.active = true;
+  App.condition.mode = mode;
+
+
+  if (mode === 'interactive') {
+    renderCollectorUI();
+    pushRobotFeed('Requested human approval to collect supplies (interactive).');
+  } else if (mode === 'silent') {
+    const startT = nowMs();
+    const numTypes = Object.keys(App.inv).length;
+    const totalUnits = numTypes * 2;
+    const durationMs = totalUnits * PER_ITEM_MS;
+
+
+    pushRobotFeed(`(Silent) Restocking all items (+2 each, ~${(durationMs / 1000).toFixed(1)}s)…`);
+    L('silent_restock_start', { all: true, total_units: totalUnits, duration_ms: durationMs });
+    playRobotVideo(true);
+
+
+    setT(() => {
+      Object.keys(App.inv).forEach(k => {
+        App.inv[k] = (App.inv[k] ?? 0) + 2;
+      });
+      saveState();
+      renderInventory();
+      renderTask();
+      pushRobotFeed('Silent restock complete (+2 each item).');
+      App.summary.conditions.push({
+        t: startT,
+        type: 'silent',
+        subtype: 'restock_all',
+        duration_ms: durationMs,
+        extra: { delta: 2, total_units: totalUnits }
+      });
+      L('silent_restock_end', { all: true, delta: 2, total_units: totalUnits, duration_ms: durationMs });
+      playRobotVideo(false);
+      endConditionWithGap(20_000);
+    }, durationMs);
+  }
+}
+
+
+function endConditionWithGap(msGap) {
+  App.condition.active = false;
+  App.condition.mode = null;
+  scheduleNextCondition(msGap);
+  saveState();
+}
+
+
+function wireSkipTask() {
+  var btn = document.getElementById('skipTaskBtn');
+  if (!btn) return;
+
+
+  btn.addEventListener('click', function () {
+    if (!App.task || App.sessionOver) return;
+
+
+    var done = true;
+    Object.keys(App.task.req).forEach(function (it) {
+      var need = App.task.req[it];
+      if ((App.task.prog[it] || 0) < need) {
+        done = false;
+      }
+    });
+
+
+    var finishedAt = nowMs();
+    var assignedAt = App.task.t0 || finishedAt;
+    var completionMs = finishedAt - assignedAt;
+    var numClicksThisTask = App.task.clicksCount || 0;
+
+
+    App.summary.tasks.push({
+      t: assignedAt,
+      id: App.task.id,
+      items: App.task.req,
+      progress: Object.assign({}, App.task.prog || {}),
+      completed_at: finishedAt,
+      fully_met: done
+    });
+
+
+    L('task_submit', {
+      id: App.task.id,
+      fully_met: done,
+      progress: Object.assign({}, App.task.prog || {})
+    });
+
+
+    // send per-task row
+    try {
+      var ids = getParticipantInfo();
+      var payload = {
+        participant_id: ids.participant_id,
+        worker_id: ids.worker_id,
+        assignment_id: ids.assignment_id,
+        unique_id: ids.participant_id,
+
+
+        mode: App.mode,
+        task_id: App.task.id,
+        task_assigned_ms: assignedAt,
+        task_completed_ms: finishedAt,
+        task_completion_ms: completionMs,
+        task_accuracy: done ? 1 : 0,
+        num_clicks_this_task: numClicksThisTask,
+        recorded_at_iso: new Date().toISOString()
+      };
+
+
+      $.ajax({
+        type: "POST",
+        url: "/record_taskdata",
+        data: { taskdata: JSON.stringify(payload) },
+        async: true
+      });
+    } catch (errTask) {
+      console.log("Error sending taskdata:", errTask);
+    }
+
+
+    App.task = null;
+    App.plan.nextTaskAt = nowMs() + 30000;
+    saveState();
+    renderTask();
+  });
+}
+
+
+// ===== Heartbeat =====
+function mainHeartbeat() {
+  const tick = () => {
+    if (App.sessionOver) return;
+    const now = nowMs();
+    maybeSpawnTask(now);
+    if (canLaunchCondition()) launchCondition();
+    setT(tick, 1000);
+  };
+  setT(tick, 100);
+}
+
+
+// ===== Condition summary helper =====
+function sendConditionSummary() {
+  try {
+    var ids = getParticipantInfo();
+
+
+    var tasksDone = (App.summary.tasks || []).filter(function (t) {
+      return t.completed_at != null;
+    });
+
+
+    var numTasks = tasksDone.length;
+    var totalCompletion = 0;
+    var totalAcc = 0;
+
+
+    tasksDone.forEach(function (t) {
+      var assignedAt = t.t || t.t0 || App.startAt;
+      var completionMs = t.completed_at - assignedAt;
+      if (completionMs < 0) completionMs = 0;
+      totalCompletion += completionMs;
+      totalAcc += (t.fully_met ? 1 : 0);
+    });
+
+
+    var meanCompletion = numTasks ? (totalCompletion / numTasks) : "";
+    var meanAccuracy = numTasks ? (totalAcc / numTasks) : "";
+
+
+    var totalClicks = (App.summary.inventoryClicks || []).length;
+    var meanClicksPerTask = (numTasks && totalClicks !== "") ? (totalClicks / numTasks) : "";
+
+
+    var conds = (App.summary.conditions || []).filter(function (c) {
+      return c.type === App.mode;
+    });
+    var numRestocks = conds.length;
+    var totalRestockUnits = 0;
+    conds.forEach(function (c) {
+      if (c.extra && typeof c.extra.total_units === "number") {
+        totalRestockUnits += c.extra.total_units;
+      }
+    });
+
+
+    var wlVals = (App.summary.wl_answers || []).filter(function (w) {
+      return w.mode === App.mode && w.rating != null && w.rating !== "";
+    }).map(function (w) { return Number(w.rating); });
+
+
+    var meanWL = "";
+    if (wlVals.length > 0) {
+      var s = 0;
+      wlVals.forEach(function (v) { s += v; });
+      meanWL = s / wlVals.length;
+    }
+
+
+    var condPayload = {
+      participant_id: ids.participant_id,
+      worker_id: ids.worker_id,
+      assignment_id: ids.assignment_id,
+      unique_id: ids.participant_id,
+
+
+      mode: App.mode,
+      num_tasks: numTasks,
+      mean_task_completion_ms: meanCompletion,
+      mean_task_accuracy: meanAccuracy,
+      total_item_clicks: totalClicks,
+      mean_clicks_per_task: meanClicksPerTask,
+      num_restocks: numRestocks,
+      total_restock_units: totalRestockUnits,
+      wl_answers_json: JSON.stringify(App.summary.wl_answers || []),
+      mean_workload: meanWL,
+      recorded_at_iso: new Date().toISOString()
+    };
+
+
+    $.ajax({
+      type: "POST",
+      url: "/record_conditiondata",
+      data: { conditiondata: JSON.stringify(condPayload) },
+      async: true
+    });
+  } catch (errCond) {
+    console.log("Error sending conditiondata:", errCond);
+  }
+}
+
+
+// ===== Finish modal + clock + WL =====
+function showFinishModal() {
+  App.sessionOver = true;
+  clearTimers();
+  clearRobotPrompt();
+  document.getElementById('wlPopup').style.display = 'none';
+  playRobotVideo(false);
+
+
+  App.summary.endAt = nowMs();
+  App.summary.finalInventory = App.inv;
+  saveState();
+
+
+  // send condition-level summary for this mode
+  sendConditionSummary();
+
+
+  // ===== NEW: also record participant_id into PsiTurk trialdata =====
+  try {
+    if (typeof psiturk !== "undefined") {
+      var ids = getParticipantInfo();
+      psiturk.recordTrialData({
+        participant_id: ids.participant_id,
+        mode: App.mode,
+        summary: App.summary
+      });
+      psiturk.saveData({});
+    }
+  } catch (e) {
+    console.error("psiturk error:", e);
+  }
+
+
+  const qs = window.location.search || "";
+  const nextBase = (App.mode === "interactive")
+      ? "/questionnaire_interactive"
+      : "/questionnaire_silent";
+
+
+  const nextUrl = nextBase + qs;
+  const endUrl  = "/complete" + qs;
+
+
+  let modal = document.getElementById('expDoneModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'expDoneModal';
+    modal.style.cssText =
+      'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+    modal.innerHTML =
+      `<div style="width:min(520px,92vw);background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;">
+         <h5 class="mb-2">Session complete</h5>
+         <div class="mb-3">Thanks! You can continue to a brief post-experiment survey.</div>
+         <div class="d-flex gap-2 justify-content-end">
+           <a class="btn btn-outline-secondary" id="btnEnd" href="${endUrl}">End Experiment</a>
+           <a class="btn btn-primary" id="btnNext" href="${nextUrl}">Continue</a>
+         </div>
+       </div>`;
+    document.body.appendChild(modal);
+  } else {
+    const next = document.getElementById('btnNext');
+    const end = document.getElementById('btnEnd');
+    if (next) next.href = nextUrl;
+    if (end)  end.href  = endUrl;
+    modal.style.display = 'flex';
+  }
+}
+
+
+function startClock() {
+  const el = document.getElementById('timer');
+  const endAt = App.startAt + App.durSec * 1000;
+
+
+  const tick = () => {
+    if (App.sessionOver) return;
+    const now = nowMs();
+    const elapsed = now - App.startAt;
+    const mm = String(Math.floor(elapsed / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, '0');
+    el.textContent = `${mm}:${ss}`;
+
+
+    const remain = endAt - now;
+    if (remain <= 0) {
+      document.getElementById('taskStatus').textContent = 'Session complete.';
+      document.getElementById('robotStatus').textContent = 'Session complete.';
+      L('session_complete', { mode: App.mode });
+      showFinishModal();
+      return;
+    }
+    setT(tick, 1000);
+  };
+  tick();
+}
+
+
+const Workload = (function () {
+  function open() {
+    if (App.sessionOver) return;
+    App.wl.choice = null;
+    App.wl.opened = performance.now();
+    const d = document.getElementById('wlPopup');
+    d.style.display = 'flex';
+    document.querySelectorAll('#wlChoices [data-v]').forEach(b => b.classList.remove('sel'));
+  }
+  function schedule(first = false) {
+    clearTimeout(App.wl.t);
+    if (App.sessionOver) return;
+    App.wl.t = setTimeout(open, first ? App.wl.firstAfter : App.wl.every);
+  }
+  function init() {
+    document.getElementById('wlChoices').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-v]');
+      if (!b) return;
+      App.wl.choice = b.getAttribute('data-v');
+      document.querySelectorAll('#wlChoices [data-v]').forEach(x => x.classList.remove('sel'));
+      b.classList.add('sel');
+    });
+    document.getElementById('wlSubmit').addEventListener('click', () => {
+      if (App.sessionOver) return;
+      const rt = Math.round(performance.now() - App.wl.opened);
+      App.summary.wl_answers.push({ t: nowMs(), rating: App.wl.choice, rt_ms: rt, mode: App.mode });
+      L('WL', { rating: App.wl.choice, rt_ms: rt, mode: App.mode });
+      document.getElementById('wlPopup').style.display = 'none';
+      schedule(false);
+      document.getElementById('wlMini').textContent = `Last WL: ${App.wl.choice ?? '—'}`;
+      saveState();
+    });
+    schedule(true);
+  }
+  return { init };
 })();
+
+
+// ===== Boot =====
+window.addEventListener('DOMContentLoaded', () => {
+  loadState();
+  renderInventory();
+  renderTask();
+  wireSkipTask();
+  mainHeartbeat();
+  startClock();
+  Workload.init();
+});
+
+
 
 
 

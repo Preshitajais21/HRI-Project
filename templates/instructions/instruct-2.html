@@ -1,43 +1,219 @@
-<div id="container-instructions">
+<style>
+  .inst-page {
+    background: #f3f4f6;
+    padding: 24px 0 40px;
+  }
+  .inst-container {
+    max-width: 1080px;
+    margin: auto;
+  }
+  .inst-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    padding: 20px 24px;
+    border-radius: 14px;
+    margin-bottom: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+  .inst-header {
+    border-left: 4px solid #2563eb;
+    padding-left: 12px;
+    margin-bottom: 10px;
+  }
+  .inst-section-title {
+    font-weight: 600;
+    font-size: 1.15rem;
+  }
+  .inst-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .inst-col-text {
+    flex: 1 1 55%;
+  }
+  .inst-col-img {
+    flex: 1 1 35%;
+    text-align: center;
+  }
+  .inst-col-img img {
+    max-width: 100%;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+  }
+  .inst-caption {
+    font-size: 0.8rem;
+    color: #6b7280;
+    margin-top: 4px;
+  }
+  .inst-cta {
+    text-align: center;
+  }
+  .inst-cta .btn-primary {
+    font-size: 1.1rem;
+    padding: 10px 28px;
+    border-radius: 999px;
+  }
+</style>
 
-    <h1>Instructions</h1>
+<div class="inst-page">
+  <div class="inst-container">
 
-    <hr />
-
-    <div class="instructions well">
-
-        <p>
-            This is the second page of instructions
-        </p>
-
-        <p>
-            Put some text in this paragraph
-        </p>
-
-
-        <script type="text/javascript">
-        //console.log(psiTurk.getInstructionIndicator())
-        </script>
-
+    <!-- Header -->
+    <div class="inst-card">
+      <div class="inst-header">
+        <h2>Instructions – Part 2: Silent Robot</h2>
+      </div>
+      <p>
+        In this second part, you will supervise the same
+        <strong>hospital inventory robot</strong>, but now the robot will
+        <strong>restock items on its own</strong> without asking you what to collect.
+      </p>
+      <p class="mb-0">
+        Your job is still to complete the hospital tasks using the Inventory
+        and Current Task panels, while the robot silently keeps the supplies topped up.
+      </p>
     </div>
 
-    <hr />
+    <!-- Overview -->
+    <div class="inst-card">
+      <div class="inst-section-title">Overall screen layout</div>
+      <p>
+        The main screen looks very similar to the previous part:
+        Inventory (left), Current Task (middle), Robot / Questions (right),
+        and the Robot Video (bottom).
+      </p>
 
-    <div class="instructionsnav">
-        <div class="row">
-            <div class="col-xs-2">
-                <button type="button" id="prev" value="prev" class="btn btn-primary btn-lg previous">
-                <span class="glyphicon glyphicon-arrow-left"></span> Previous
-                </button>
-            </div>
-            <div class="col-xs-8">
-            </div>
-            <div class="col-xs-2">
-                <button type="button" id="next" value="next" class="btn btn-primary btn-lg continue">
-                Next <span class="glyphicon glyphicon-arrow-right"></span>
-                </button>
-            </div>
+      <div class="inst-col-img">
+        <!-- reuse same overview image or a silent-specific one -->
+        <img src="/static/images/instructions/overview.png"
+             alt="Overview of the inventory supervision screen">
+        <div class="inst-caption">Full experiment screen</div>
+      </div>
+    </div>
+
+    <!-- Inventory -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-title">Inventory panel (left)</div>
+          <p>
+            The <strong>Inventory</strong> panel is the same as before.
+            It shows the available items and their current counts.
+          </p>
+          <ul>
+            <li>Click an item name to send <strong>1 unit</strong> toward the current task.</li>
+            <li>You can click the same item multiple times to send more units.</li>
+          </ul>
+          <p class="mb-0">
+            These clicks represent you telling the robot which items to send out to the hospital.
+          </p>
         </div>
+
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/inventory.png"
+               alt="Inventory panel example">
+          <div class="inst-caption">Inventory panel</div>
+        </div>
+      </div>
     </div>
 
+    <!-- Current Task -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-title">Current Task panel (middle)</div>
+          <p>
+            The <strong>Current Task</strong> panel again shows what the hospital currently needs
+            (for example, “2 Gloves, 3 Masks”).
+          </p>
+          <ul>
+            <li>Use the Inventory panel to send items toward this task.</li>
+            <li>When you are satisfied with what you have sent, click
+                <strong>“Submit Task”</strong> to finish that task.</li>
+          </ul>
+          <p class="mb-0">
+            The next task will appear after a short delay, just as in the first part.
+          </p>
+        </div>
+
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/current_task.png"
+               alt="Current task panel example">
+          <div class="inst-caption">Current task example</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Silent Robot behaviour -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-title">Silent robot behavior (right panel)</div>
+          <p>
+            In this part, the robot sometimes <strong>restocks items automatically</strong>.
+            When this happens, you will see a short message on the right panel such as:
+            <em>“(Silent) Restocking supplies…”</em>
+          </p>
+          <ul>
+            <li>The robot chooses what to collect; you do <strong>not</strong> enter numbers for it.</li>
+            <li>While the robot is restocking, the inventory counts will increase automatically.</li>
+            <li>You should continue focusing on completing the Current Task as best you can.</li>
+          </ul>
+          <p class="mb-0">
+            Compare this experience with the first part, where you actively chose the restocking amounts.
+          </p>
+        </div>
+
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/silent_restock.png"
+               alt="Silent restock example">
+          <div class="inst-caption">Example of a silent restock message</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robot video -->
+    <div class="inst-card">
+      <div class="inst-row">
+        <div class="inst-col-text">
+          <div class="inst-section-title">Robot video (bottom)</div>
+          <p>
+            When the robot is silently restocking items, the <strong>robot video</strong> plays,
+            just as before. This represents the robot moving and collecting supplies.
+          </p>
+          <p class="mb-0">
+            You do not need to click on the video – it is there to give you a sense
+            of the robot working in the background while you manage the tasks.
+          </p>
+        </div>
+
+        <div class="inst-col-img">
+          <img src="/static/images/instructions/robot_video.png"
+               alt="Robot video area example">
+          <div class="inst-caption">Robot video area</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="inst-card inst-cta">
+      <p>
+        This part will also last about <strong>2.5 minutes</strong>.
+        When you are ready, click the button below to begin the
+        <strong>Silent Robot</strong> condition.
+      </p>
+      <button class="btn btn-primary"
+              onclick="window.location='/exp?mode=silent&hitId={{ hitId }}&assignmentId={{ assignmentId }}&workerId={{ workerId }}'">
+        Start Experiment (Silent Robot)
+      </button>
+
+
+    </div>
+
+  </div>
 </div>
+
+
+
